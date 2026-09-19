@@ -52,7 +52,74 @@ function createBoard() {
     moveHistory = [];
     redoHistory = [];
     isWhiteTurn = true;
+    clearMoveHighlights();
     updateButtonStates();
+}
+
+function clearMoveHighlights() {
+    document.querySelectorAll('.square').forEach(square => {
+        square.classList.remove('move-target', 'capture-target');
+    });
+}
+
+function highlightAvailableMoves() {
+    clearMoveHighlights();
+    if (!selectedPiece || !selectedSquare) return;
+
+    const row = selectedSquare.row;
+    const col = selectedSquare.col;
+    const possibleMoves = [];
+
+    if (selectedPiece === '♙') {
+        const oneStep = row - 1;
+        const twoStep = row - 2;
+        if (oneStep >= 0 && document.getElementById(`square-${oneStep}-${col}`).textContent === '') {
+            possibleMoves.push({ row: oneStep, col, isCapture: false });
+            if (row === 6 && twoStep >= 0 && document.getElementById(`square-${twoStep}-${col}`).textContent === '') {
+                possibleMoves.push({ row: twoStep, col, isCapture: false });
+            }
+        }
+
+        [-1, 1].forEach(delta => {
+            const targetCol = col + delta;
+            const targetRow = row - 1;
+            if (targetCol >= 0 && targetCol < 8 && targetRow >= 0 && targetRow < 8) {
+                const targetSquare = document.getElementById(`square-${targetRow}-${targetCol}`);
+                if (targetSquare.textContent && checkIfBlackPiece(targetSquare.textContent)) {
+                    possibleMoves.push({ row: targetRow, col: targetCol, isCapture: true });
+                }
+            }
+        });
+    }
+
+    if (selectedPiece === '♟') {
+        const oneStep = row + 1;
+        const twoStep = row + 2;
+        if (oneStep < 8 && document.getElementById(`square-${oneStep}-${col}`).textContent === '') {
+            possibleMoves.push({ row: oneStep, col, isCapture: false });
+            if (row === 1 && twoStep < 8 && document.getElementById(`square-${twoStep}-${col}`).textContent === '') {
+                possibleMoves.push({ row: twoStep, col, isCapture: false });
+            }
+        }
+
+        [-1, 1].forEach(delta => {
+            const targetCol = col + delta;
+            const targetRow = row + 1;
+            if (targetCol >= 0 && targetCol < 8 && targetRow >= 0 && targetRow < 8) {
+                const targetSquare = document.getElementById(`square-${targetRow}-${targetCol}`);
+                if (targetSquare.textContent && checkIfWhitePiece(targetSquare.textContent)) {
+                    possibleMoves.push({ row: targetRow, col: targetCol, isCapture: true });
+                }
+            }
+        });
+    }
+
+    possibleMoves.forEach(move => {
+        const moveSquare = document.getElementById(`square-${move.row}-${move.col}`);
+        if (moveSquare) {
+            moveSquare.classList.add(move.isCapture ? 'capture-target' : 'move-target');
+        }
+    });
 }
 
 function selectSquare(row, col) {//Consider displaying valid moves
@@ -66,6 +133,7 @@ function selectSquare(row, col) {//Consider displaying valid moves
         selectedPiece = square.textContent;
         selectedSquare = square;
         square.classList.add('selected');
+        highlightAvailableMoves();
     }
 }
 
@@ -88,6 +156,7 @@ function movePiece(row, col) {
         targetSquare.textContent = selectedPiece; //moves the piece
         selectedSquare.textContent = '';
         selectedSquare.classList.remove('selected');
+        clearMoveHighlights();
         selectedPiece = null;
         selectedSquare = null;
         isWhiteTurn = !isWhiteTurn;
