@@ -1,17 +1,19 @@
-/*
-TO Do's:
-    Piece capturing (Bug: Pieces will move anywhere, unless there is a piece in that square)
-    Unselect a piece
-    Other piece movement
-*/
-
 const board = document.getElementById('chessboard');
 const resetButton = document.getElementById('resetButton');
 const undoButton = document.getElementById('undoButton');
 const redoButton = document.getElementById('redoButton');
+const statusBar = document.getElementById('statusBar');
+const capturedPiecesEl = document.getElementById('capturedPieces');
+const moveLogEl = document.getElementById('moveLog');
+
 const pieces = {
     'R': '♜', 'N': '♞', 'B': '♝', 'Q': '♛', 'K': '♚', 'P': '♟',
     'r': '♖', 'n': '♘', 'b': '♗', 'q': '♕', 'k': '♔', 'p': '♙'
+};
+
+const pieceNames = {
+    '♜': 'Rook', '♞': 'Knight', '♝': 'Bishop', '♛': 'Queen', '♚': 'King', '♟': 'Pawn',
+    '♖': 'Rook', '♘': 'Knight', '♗': 'Bishop', '♕': 'Queen', '♔': 'King', '♙': 'Pawn'
 };
 
 const initialBoard = [
@@ -30,30 +32,47 @@ let selectedSquare = null;
 let moveHistory = [];
 let redoHistory = [];
 let isWhiteTurn = true;
+let capturedPieces = {
+    white: [],
+    black: []
+};
 
 function createBoard() {
-    board.innerHTML = ''; // Clear the board first
-    for (let i = 0; i < 8; i++) {
-        for (let j = 0; j < 8; j++) {
+    board.innerHTML = '';
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
             const square = document.createElement('div');
             square.classList.add('square');
-            square.classList.add((i + j) % 2 === 0 ? 'white' : 'black');
-            square.id = `square-${i}-${j}`;
-            square.row = i;
-            square.col = j;
-            const piece = initialBoard[i][j];
+            square.classList.add((row + col) % 2 === 0 ? 'white' : 'black');
+            square.id = `square-${row}-${col}`;
+            square.row = row;
+            square.col = col;
+
+            const piece = initialBoard[row][col];
             if (piece !== ' ') {
                 square.textContent = pieces[piece];
             }
-            square.addEventListener('click', () => selectSquare(i, j));
+
+            square.addEventListener('click', () => selectSquare(row, col));
             board.appendChild(square);
         }
     }
+
     moveHistory = [];
     redoHistory = [];
+    capturedPieces = { white: [], black: [] };
     isWhiteTurn = true;
+    selectedPiece = null;
+    selectedSquare = null;
     clearMoveHighlights();
     updateButtonStates();
+    updateStatusBar();
+    renderCapturedPieces();
+    renderMoveLog();
+}
+
+function getSquare(row, col) {
+    return document.getElementById(`square-${row}-${col}`);
 }
 
 function clearMoveHighlights() {
@@ -62,71 +81,195 @@ function clearMoveHighlights() {
     });
 }
 
+function squareInBounds(row, col) {
+    return row >= 0 && row < 8 && col >= 0 && col < 8;
+}
+
+function isWhitePiece(piece) {
+    return piece === '♖' || piece === '♘' || piece === '♗' || piece === '♕' || piece === '♔' || piece === '♙';
+}
+
+function isBlackPiece(piece) {
+    return piece === '♜' || piece === '♞' || piece === '♝' || piece === '♛' || piece === '♚' || piece === '♟';
+}
+
+function isTurnValid(piece) {
+    if (isWhiteTurn && isWhitePiece(piece)) {
+        return true;
+    }
+
+    if (!isWhiteTurn && isBlackPiece(piece)) {
+        return true;
+    }
+
+    return false;
+}
+
+function formatSquare(row, col) {
+    const files = 'abcdefgh';
+    return `${files[col]}${8 - row}`;
+}
+
+function addDirectionalMoves(moves, startRow, startCol, rowStep, colStep, isWhite) {
+    let row = startRow + rowStep;
+    let col = startCol + colStep;
+
+    while (squareInBounds(row, col)) {
+        const targetSquare = getSquare(row, col);
+        const targetPiece = targetSquare.textContent;
+
+        if (!targetPiece) {
+            moves.push({ row, col, isCapture: false });
+        } else {
+            if ((isWhite && isBlackPiece(targetPiece)) || (!isWhite && isWhitePiece(targetPiece))) {
+                moves.push({ row, col, isCapture: true });
+            }
+            break;
+        }
+
+        row += rowStep;
+        col += colStep;
+    }
+}
+
+function getPieceMoves(piece, row, col) {
+    const moves = [];
+    const isWhite = isWhitePiece(piece);
+
+    if (piece === '♙' || piece === '♟') {
+        const direction = isWhite ? -1 : 1;
+        const startRow = isWhite ? 6 : 1;
+        const oneStepRow = row + direction;
+
+        if (squareInBounds(oneStepRow, col)) {
+            const squareAhead = getSquare(oneStepRow, col);
+            if (!squareAhead.textContent) {
+                moves.push({ row: oneStepRow, col, isCapture: false });
+                const twoStepRow = row + (direction * 2);
+                if (row === startRow && squareInBounds(twoStepRow, col)) {
+                    const secondSquare = getSquare(twoStepRow, col);
+                    if (!secondSquare.textContent) {
+                        moves.push({ row: twoStepRow, col, isCapture: false });
+                    }
+                }
+            }
+        }
+
+        [-1, 1].forEach(delta => {
+            const targetRow = row + direction;
+            const targetCol = col + delta;
+            if (squareInBounds(targetRow, targetCol)) {
+                const targetSquare = getSquare(targetRow, targetCol);
+                const targetPiece = targetSquare.textContent;
+                if (targetPiece && ((isWhite && isBlackPiece(targetPiece)) || (!isWhite && isWhitePiece(targetPiece)))) {
+                    moves.push({ row: targetRow, col: targetCol, isCapture: true });
+                }
+            }
+        });
+
+        return moves;
+    }
+
+    if (piece === '♖' || piece === '♜') {
+        const directions = [[1,0],[-1,0],[0,1],[0,-1]];
+        directions.forEach(([rowStep, colStep]) => addDirectionalMoves(moves, row, col, rowStep, colStep, isWhite));
+        return moves;
+    }
+
+    if (piece === '♗' || piece === '♝') {
+        const directions = [[1,1],[1,-1],[-1,1],[-1,-1]];
+        directions.forEach(([rowStep, colStep]) => addDirectionalMoves(moves, row, col, rowStep, colStep, isWhite));
+        return moves;
+    }
+
+    if (piece === '♕' || piece === '♛') {
+        const directions = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+        directions.forEach(([rowStep, colStep]) => addDirectionalMoves(moves, row, col, rowStep, colStep, isWhite));
+        return moves;
+    }
+
+    if (piece === '♘' || piece === '♞') {
+        const knightMoves = [
+            [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+            [1, -2], [1, 2], [2, -1], [2, 1]
+        ];
+
+        knightMoves.forEach(([rowOffset, colOffset]) => {
+            const targetRow = row + rowOffset;
+            const targetCol = col + colOffset;
+            if (!squareInBounds(targetRow, targetCol)) {
+                return;
+            }
+
+            const targetSquare = getSquare(targetRow, targetCol);
+            const targetPiece = targetSquare.textContent;
+            if (!targetPiece) {
+                moves.push({ row: targetRow, col: targetCol, isCapture: false });
+                return;
+            }
+
+            if ((isWhite && isBlackPiece(targetPiece)) || (!isWhite && isWhitePiece(targetPiece))) {
+                moves.push({ row: targetRow, col: targetCol, isCapture: true });
+            }
+        });
+
+        return moves;
+    }
+
+    if (piece === '♔' || piece === '♚') {
+        const kingMoves = [
+            [1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]
+        ];
+
+        kingMoves.forEach(([rowOffset, colOffset]) => {
+            const targetRow = row + rowOffset;
+            const targetCol = col + colOffset;
+            if (!squareInBounds(targetRow, targetCol)) {
+                return;
+            }
+
+            const targetSquare = getSquare(targetRow, targetCol);
+            const targetPiece = targetSquare.textContent;
+            if (!targetPiece) {
+                moves.push({ row: targetRow, col: targetCol, isCapture: false });
+                return;
+            }
+
+            if ((isWhite && isBlackPiece(targetPiece)) || (!isWhite && isWhitePiece(targetPiece))) {
+                moves.push({ row: targetRow, col: targetCol, isCapture: true });
+            }
+        });
+    }
+
+    return moves;
+}
+
 function highlightAvailableMoves() {
     clearMoveHighlights();
-    if (!selectedPiece || !selectedSquare) return;
-
-    const row = selectedSquare.row;
-    const col = selectedSquare.col;
-    const possibleMoves = [];
-
-    if (selectedPiece === '♙') {
-        const oneStep = row - 1;
-        const twoStep = row - 2;
-        if (oneStep >= 0 && document.getElementById(`square-${oneStep}-${col}`).textContent === '') {
-            possibleMoves.push({ row: oneStep, col, isCapture: false });
-            if (row === 6 && twoStep >= 0 && document.getElementById(`square-${twoStep}-${col}`).textContent === '') {
-                possibleMoves.push({ row: twoStep, col, isCapture: false });
-            }
-        }
-
-        [-1, 1].forEach(delta => {
-            const targetCol = col + delta;
-            const targetRow = row - 1;
-            if (targetCol >= 0 && targetCol < 8 && targetRow >= 0 && targetRow < 8) {
-                const targetSquare = document.getElementById(`square-${targetRow}-${targetCol}`);
-                if (targetSquare.textContent && checkIfBlackPiece(targetSquare.textContent)) {
-                    possibleMoves.push({ row: targetRow, col: targetCol, isCapture: true });
-                }
-            }
-        });
+    if (!selectedPiece || !selectedSquare) {
+        return;
     }
 
-    if (selectedPiece === '♟') {
-        const oneStep = row + 1;
-        const twoStep = row + 2;
-        if (oneStep < 8 && document.getElementById(`square-${oneStep}-${col}`).textContent === '') {
-            possibleMoves.push({ row: oneStep, col, isCapture: false });
-            if (row === 1 && twoStep < 8 && document.getElementById(`square-${twoStep}-${col}`).textContent === '') {
-                possibleMoves.push({ row: twoStep, col, isCapture: false });
-            }
-        }
-
-        [-1, 1].forEach(delta => {
-            const targetCol = col + delta;
-            const targetRow = row + 1;
-            if (targetCol >= 0 && targetCol < 8 && targetRow >= 0 && targetRow < 8) {
-                const targetSquare = document.getElementById(`square-${targetRow}-${targetCol}`);
-                if (targetSquare.textContent && checkIfWhitePiece(targetSquare.textContent)) {
-                    possibleMoves.push({ row: targetRow, col: targetCol, isCapture: true });
-                }
-            }
-        });
-    }
-
-    possibleMoves.forEach(move => {
-        const moveSquare = document.getElementById(`square-${move.row}-${move.col}`);
+    const legalMoves = getPieceMoves(selectedPiece, selectedSquare.row, selectedSquare.col);
+    legalMoves.forEach(move => {
+        const moveSquare = getSquare(move.row, move.col);
         if (moveSquare) {
             moveSquare.classList.add(move.isCapture ? 'capture-target' : 'move-target');
         }
     });
 }
 
-function selectSquare(row, col) {//Consider displaying valid moves
-    const square = document.getElementById(`square-${row}-${col}`);
-    if (selectedPiece) {
-        movePiece(row, col);
-    } else if (square.textContent !== '' && isTurnValid(square.textContent)) {
+function toggleSelection(row, col) {
+    const square = getSquare(row, col);
+    if (selectedSquare && selectedSquare.row === row && selectedSquare.col === col) {
+        selectedSquare.classList.remove('selected');
+        selectedPiece = null;
+        selectedSquare = null;
+        clearMoveHighlights();
+        return;
+    }
+
+    if (square.textContent && isTurnValid(square.textContent)) {
         if (selectedSquare) {
             selectedSquare.classList.remove('selected');
         }
@@ -137,113 +280,146 @@ function selectSquare(row, col) {//Consider displaying valid moves
     }
 }
 
-function movePiece(row, col) {
-    const targetSquare = document.getElementById(`square-${row}-${col}`);
-    if ((targetSquare.textContent === '' || (targetSquare.textContent !== '' && isTurnValid(targetSquare.textContent))) && ValidMove(selectedPiece, selectedSquare, row, col, targetSquare)) {
+function selectSquare(row, col) {
+    const square = getSquare(row, col);
 
-        moveHistory.push({
-            from: selectedSquare.id,
-            to: targetSquare.id,
-            piece: selectedPiece,
-            captured: targetSquare.textContent
-        });
+    if (selectedPiece) {
+        if (movePiece(row, col)) {
+            return;
+        }
 
-        //
-        //console.log("From -> Row: ", selectedSquare.row, ", Col: ", selectedSquare.col);
-        //console.log("Going to -> Row: ", row, ", Col: ", col);
-        //
-        redoHistory = [];
-        targetSquare.textContent = selectedPiece; //moves the piece
-        selectedSquare.textContent = '';
+        if (square.textContent && isTurnValid(square.textContent)) {
+            toggleSelection(row, col);
+            return;
+        }
+
         selectedSquare.classList.remove('selected');
-        clearMoveHighlights();
         selectedPiece = null;
         selectedSquare = null;
-        isWhiteTurn = !isWhiteTurn;
-        updateButtonStates();
+        clearMoveHighlights();
+        return;
+    }
+
+    if (square.textContent && isTurnValid(square.textContent)) {
+        toggleSelection(row, col);
     }
 }
 
-function ValidMove(selectedPiece, selectedSquare, targetRow, targetCol, targetSquare){
+function ValidMove(piece, startSquare, targetRow, targetCol) {
+    const moves = getPieceMoves(piece, startSquare.row, startSquare.col);
+    return moves.some(move => move.row === targetRow && move.col === targetCol);
+}
 
-    //Valid White Pawn moves
-    if(selectedPiece === '♙'){
-        //Move 2 squares up from home square
-        if(selectedSquare.row == 6 && targetRow == 4){
-            return true;
-        }
-        
-        //Move 1 square up
-        else if((targetRow === (selectedSquare.row - 1)) && targetCol == selectedSquare.col){
-            return true;
-        }
-
-        //capture diagonally
-        /*else if ((targetRow === (selectedSquare.row - 1)) && ((targetCol == selectedSquare.col + 1) || (targetCol == selectedSquare.col - 1)) && checkIfBlackPiece(targetSquare.textContent) ){
-            console.log("diag pawn capture");
-            return true;
-        }*/
-
+function movePiece(row, col) {
+    const targetSquare = getSquare(row, col);
+    if (!selectedPiece || !selectedSquare) {
         return false;
-
-        
-        //en passent
     }
+
+    if (selectedSquare.row === row && selectedSquare.col === col) {
+        return false;
+    }
+
+    if (!ValidMove(selectedPiece, selectedSquare, row, col)) {
+        return false;
+    }
+
+    const capturedValue = targetSquare.textContent;
+    moveHistory.push({
+        from: selectedSquare.id,
+        to: targetSquare.id,
+        piece: selectedPiece,
+        captured: capturedValue,
+        notation: `${pieceNames[selectedPiece]} ${formatSquare(selectedSquare.row, selectedSquare.col)} to ${formatSquare(row, col)}`
+    });
+
+    redoHistory = [];
+
+    if (capturedValue) {
+        const captureOwner = isWhitePiece(selectedPiece) ? 'black' : 'white';
+        capturedPieces[captureOwner].push(capturedValue);
+    }
+
+    targetSquare.textContent = selectedPiece;
+    selectedSquare.textContent = '';
+    selectedSquare.classList.remove('selected');
+    clearMoveHighlights();
+
+    selectedPiece = null;
+    selectedSquare = null;
+    isWhiteTurn = !isWhiteTurn;
+    updateButtonStates();
+    updateStatusBar();
+    renderCapturedPieces();
+    renderMoveLog();
     return true;
 }
 
-function checkIfBlackPiece(piece){
-   if (piece === '♜' || piece === '♞'|| piece === '♝'|| piece === '♛'|| piece === '♚'|| piece === '♟'){
-    return true;
-   }
-   return false;
+function updateStatusBar() {
+    statusBar.textContent = `${isWhiteTurn ? 'White' : 'Black'} to move`;
 }
 
-function checkIfWhitePiece(piece){
-    if (piece === '♖' || piece === '♘'|| piece === '♗'|| piece === '♕'|| piece === '♔'|| piece === '♙'){
-        return true;
-    }
-    return false;
+function renderCapturedPieces() {
+    const whiteCaptures = capturedPieces.white.map(piece => `<span class="capture-group">${piece}</span>`).join('');
+    const blackCaptures = capturedPieces.black.map(piece => `<span class="capture-group">${piece}</span>`).join('');
+
+    capturedPiecesEl.innerHTML = `
+        <div class="capture-group"><strong>White</strong> ${whiteCaptures}</div>
+        <div class="capture-group"><strong>Black</strong> ${blackCaptures}</div>
+    `;
 }
 
-
-function isTurnValid(piece) {
-    //White's move
-    if (isWhiteTurn && checkIfWhitePiece(piece)) {
-        return true;
-    }
-
-    //Black's move
-    if (!isWhiteTurn && checkIfBlackPiece(piece)){
-        return true;
-    } 
-    return false;
+function renderMoveLog() {
+    const lastMoves = moveHistory.slice(-12);
+    moveLogEl.innerHTML = lastMoves.map(move => `<li>${move.notation}</li>`).join('');
 }
 
 function undoMove() {
     const lastMove = moveHistory.pop();
-    if (lastMove) {
-        const fromSquare = document.getElementById(lastMove.from);
-        const toSquare = document.getElementById(lastMove.to);
-        fromSquare.textContent = lastMove.piece;
-        toSquare.textContent = lastMove.captured;
-        redoHistory.push(lastMove);
-        isWhiteTurn = !isWhiteTurn;
-        updateButtonStates();
+    if (!lastMove) {
+        return;
     }
+
+    const fromSquare = document.getElementById(lastMove.from);
+    const toSquare = document.getElementById(lastMove.to);
+    fromSquare.textContent = lastMove.piece;
+    toSquare.textContent = lastMove.captured;
+
+    if (lastMove.captured) {
+        const captureOwner = isWhitePiece(lastMove.piece) ? 'black' : 'white';
+        capturedPieces[captureOwner].pop();
+    }
+
+    redoHistory.push(lastMove);
+    isWhiteTurn = !isWhiteTurn;
+    updateButtonStates();
+    updateStatusBar();
+    renderCapturedPieces();
+    renderMoveLog();
 }
 
 function redoMove() {
     const lastUndo = redoHistory.pop();
-    if (lastUndo) {
-        const fromSquare = document.getElementById(lastUndo.from);
-        const toSquare = document.getElementById(lastUndo.to);
-        toSquare.textContent = lastUndo.piece;
-        fromSquare.textContent = '';
-        moveHistory.push(lastUndo);
-        isWhiteTurn = !isWhiteTurn;
-        updateButtonStates();
+    if (!lastUndo) {
+        return;
     }
+
+    const fromSquare = document.getElementById(lastUndo.from);
+    const toSquare = document.getElementById(lastUndo.to);
+    toSquare.textContent = lastUndo.piece;
+    fromSquare.textContent = '';
+
+    if (lastUndo.captured) {
+        const captureOwner = isWhitePiece(lastUndo.piece) ? 'black' : 'white';
+        capturedPieces[captureOwner].push(lastUndo.captured);
+    }
+
+    moveHistory.push(lastUndo);
+    isWhiteTurn = !isWhiteTurn;
+    updateButtonStates();
+    updateStatusBar();
+    renderCapturedPieces();
+    renderMoveLog();
 }
 
 function updateButtonStates() {

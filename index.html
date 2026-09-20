@@ -7,10 +7,32 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="chessboard"></div>
-    <button id="resetButton">Reset Board</button>
-    <button id="undoButton" disabled>Undo Move</button>
-    <button id="redoButton" disabled>Redo Move</button>
+    <div class="game-shell">
+        <div class="board-panel">
+            <div id="chessboard" aria-label="Chess board"></div>
+        </div>
+
+        <aside class="info-panel">
+            <div id="statusBar" class="status-bar">White to move</div>
+
+            <div class="info-card">
+                <h3>Captured</h3>
+                <div id="capturedPieces" class="captured-pieces"></div>
+            </div>
+
+            <div class="info-card">
+                <h3>Move Log</h3>
+                <ol id="moveLog" class="move-log"></ol>
+            </div>
+
+            <div class="controls">
+                <button id="resetButton">Reset Board</button>
+                <button id="undoButton" disabled>Undo Move</button>
+                <button id="redoButton" disabled>Redo Move</button>
+            </div>
+        </aside>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
