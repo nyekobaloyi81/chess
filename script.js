@@ -11,6 +11,9 @@ const pieces = {
     'r': '♖', 'n': '♘', 'b': '♗', 'q': '♕', 'k': '♔', 'p': '♙'
 };
 
+const gameOverModal = document.getElementById('gameOverModal');
+const gameOverMessageEl = document.getElementById('gameOverMessage');
+
 const pieceNames = {
     '♜': 'Rook', '♞': 'Knight', '♝': 'Bishop', '♛': 'Queen', '♚': 'King', '♟': 'Pawn',
     '♖': 'Rook', '♘': 'Knight', '♗': 'Bishop', '♕': 'Queen', '♔': 'King', '♙': 'Pawn'
@@ -36,6 +39,8 @@ let capturedPieces = {
     white: [],
     black: []
 };
+let gameOver = false;
+let winner = null;
 
 function createBoard() {
     board.innerHTML = '';
@@ -64,6 +69,9 @@ function createBoard() {
     isWhiteTurn = true;
     selectedPiece = null;
     selectedSquare = null;
+    gameOver = false;
+    winner = null;
+    hideGameOverModal();
     clearMoveHighlights();
     updateButtonStates();
     updateStatusBar();
@@ -281,6 +289,10 @@ function toggleSelection(row, col) {
 }
 
 function selectSquare(row, col) {
+    if (gameOver) {
+        return;
+    }
+
     const square = getSquare(row, col);
 
     if (selectedPiece) {
@@ -305,12 +317,38 @@ function selectSquare(row, col) {
     }
 }
 
+function isMoveLegal(piece, startRow, startCol, targetRow, targetCol) {
+    const startSquare = getSquare(startRow, startCol);
+    const targetSquare = getSquare(targetRow, targetCol);
+    const originalTargetPiece = targetSquare.textContent;
+
+    startSquare.textContent = '';
+    targetSquare.textContent = piece;
+
+    const sideToCheck = isWhitePiece(piece) ? 'white' : 'black';
+    const result = !isKingInCheck(sideToCheck);
+
+    startSquare.textContent = piece;
+    targetSquare.textContent = originalTargetPiece;
+
+    return result;
+}
+
 function ValidMove(piece, startSquare, targetRow, targetCol) {
     const moves = getPieceMoves(piece, startSquare.row, startSquare.col);
-    return moves.some(move => move.row === targetRow && move.col === targetCol);
+    const isTargetMove = moves.some(move => move.row === targetRow && move.col === targetCol);
+    if (!isTargetMove) {
+        return false;
+    }
+
+    return isMoveLegal(piece, startSquare.row, startSquare.col, targetRow, targetCol);
 }
 
 function movePiece(row, col) {
+    if (gameOver) {
+        return false;
+    }
+
     const targetSquare = getSquare(row, col);
     if (!selectedPiece || !selectedSquare) {
         return false;
@@ -349,14 +387,119 @@ function movePiece(row, col) {
     selectedSquare = null;
     isWhiteTurn = !isWhiteTurn;
     updateButtonStates();
-    updateStatusBar();
     renderCapturedPieces();
     renderMoveLog();
+    checkForCheckmate();
+    updateStatusBar();
     return true;
 }
 
+function getKingPosition(isWhiteKing) {
+    const kingSymbol = isWhiteKing ? '♔' : '♚';
+    const squares = document.querySelectorAll('.square');
+
+    for (const square of squares) {
+        if (square.textContent === kingSymbol) {
+            return { row: square.row, col: square.col };
+        }
+    }
+
+    return null;
+}
+
+function isKingInCheck(color) {
+    const isWhiteKing = color === 'white';
+    const kingPosition = getKingPosition(isWhiteKing);
+
+    if (!kingPosition) {
+        return false;
+    }
+
+    const squares = document.querySelectorAll('.square');
+    for (const square of squares) {
+        const piece = square.textContent;
+        if (!piece) {
+            continue;
+        }
+
+        const isEnemyPiece = isWhiteKing ? isBlackPiece(piece) : isWhitePiece(piece);
+        if (!isEnemyPiece) {
+            continue;
+        }
+
+        const moves = getPieceMoves(piece, square.row, square.col);
+        if (moves.some(move => move.row === kingPosition.row && move.col === kingPosition.col)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function getLegalMovesForSide(teamColor) {
+    const legalMoves = [];
+    const squares = document.querySelectorAll('.square');
+
+    for (const square of squares) {
+        const piece = square.textContent;
+        if (!piece) {
+            continue;
+        }
+
+        const pieceColor = isWhitePiece(piece) ? 'white' : isBlackPiece(piece) ? 'black' : null;
+        if (pieceColor !== teamColor) {
+            continue;
+        }
+
+        const moves = getPieceMoves(piece, square.row, square.col);
+        moves.forEach(move => {
+            if (isMoveLegal(piece, square.row, square.col, move.row, move.col)) {
+                legalMoves.push({ piece, from: square, to: getSquare(move.row, move.col), row: move.row, col: move.col });
+            }
+        });
+    }
+
+    return legalMoves;
+}
+
+function showGameOverModal(message) {
+    gameOverMessageEl.textContent = message;
+    gameOverModal.classList.remove('hidden');
+}
+
+function hideGameOverModal() {
+    gameOverModal.classList.add('hidden');
+}
+
+function checkForCheckmate() {
+    if (gameOver) {
+        return true;
+    }
+
+    const sideToMove = isWhiteTurn ? 'white' : 'black';
+    const isInCheck = isKingInCheck(sideToMove);
+    const hasLegalMoves = getLegalMovesForSide(sideToMove).length > 0;
+
+    if (isInCheck && !hasLegalMoves) {
+        gameOver = true;
+        winner = sideToMove === 'white' ? 'black' : 'white';
+        showGameOverModal(`Checkmate — ${winner === 'white' ? 'White' : 'Black'} wins!`);
+        return true;
+    }
+
+    return false;
+}
+
 function updateStatusBar() {
-    statusBar.textContent = `${isWhiteTurn ? 'White' : 'Black'} to move`;
+    if (gameOver) {
+        statusBar.textContent = `Checkmate — ${winner === 'white' ? 'White' : 'Black'} wins`;
+        return;
+    }
+
+    const sideToMove = isWhiteTurn ? 'White' : 'Black';
+    const sideInCheck = isKingInCheck(isWhiteTurn ? 'white' : 'black');
+    const checkText = sideInCheck ? ' - in check' : '';
+    statusBar.textContent = `${sideToMove} to move${checkText}`;
 }
 
 function renderCapturedPieces() {
@@ -430,5 +573,6 @@ function updateButtonStates() {
 resetButton.addEventListener('click', createBoard);
 undoButton.addEventListener('click', undoMove);
 redoButton.addEventListener('click', redoMove);
+document.getElementById('newGameButton').addEventListener('click', createBoard);
 
 createBoard();
