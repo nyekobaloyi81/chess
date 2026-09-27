@@ -2,6 +2,7 @@ const board = document.getElementById('chessboard');
 const resetButton = document.getElementById('resetButton');
 const undoButton = document.getElementById('undoButton');
 const redoButton = document.getElementById('redoButton');
+const themeToggle = document.getElementById('themeToggle');
 const statusBar = document.getElementById('statusBar');
 const capturedPiecesEl = document.getElementById('capturedPieces');
 const moveLogEl = document.getElementById('moveLog');
@@ -424,9 +425,25 @@ function updateButtonStates() {
     redoButton.disabled = redoHistory.length === 0;
 }
 
+function applyThemePreference() {
+    const isDarkMode = localStorage.getItem('chessDarkMode') === 'true';
+    document.body.classList.toggle('dark-mode', isDarkMode);
+    const label = themeToggle.querySelector('.switch-label');
+    label.textContent = isDarkMode ? 'Dark' : 'Light';
+    themeToggle.setAttribute('aria-pressed', String(isDarkMode));
+}
+
 resetButton.addEventListener('click', createBoard);
 undoButton.addEventListener('click', undoMove);
 redoButton.addEventListener('click', redoMove);
+
+themeToggle.addEventListener('click', () => {
+    const isDarkMode = !document.body.classList.contains('dark-mode');
+    localStorage.setItem('chessDarkMode', String(isDarkMode));
+    applyThemePreference();
+});
+
 document.getElementById('newGameButton').addEventListener('click', createBoard);
 
+applyThemePreference();
 createBoard();
