@@ -40,8 +40,83 @@ let capturedPieces = {
     white: [],
     black: []
 };
+let castlingRights = {
+    white: { kingSide: true, queenSide: true },
+    black: { kingSide: true, queenSide: true }
+};
 let gameOver = false;
 let winner = null;
+
+function getInitialCastlingRights() {
+    return {
+        white: { kingSide: true, queenSide: true },
+        black: { kingSide: true, queenSide: true }
+    };
+}
+
+function isCastlingMove(piece, startRow, startCol, targetRow, targetCol) {
+    if ((piece !== '♔' && piece !== '♚') || startRow !== targetRow) {
+        return false;
+    }
+
+    return startCol === 4 && (targetCol === 6 || targetCol === 2);
+}
+
+function isSquareUnderAttack(targetRow, targetCol, attackingColor) {
+    const squares = document.querySelectorAll('.square');
+
+    for (const square of squares) {
+        const piece = square.textContent;
+        if (!piece) {
+            continue;
+        }
+
+        const pieceColor = isWhitePiece(piece) ? 'white' : isBlackPiece(piece) ? 'black' : null;
+        if (pieceColor !== attackingColor) {
+            continue;
+        }
+
+        const moves = getPieceMoves(piece, square.row, square.col);
+        if (moves.some(move => move.row === targetRow && move.col === targetCol)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function updateCastlingRights(piece, fromRow, fromCol, toRow, toCol, capturedPiece) {
+    const side = isWhitePiece(piece) ? 'white' : 'black';
+    const backRank = side === 'white' ? 7 : 0;
+
+    if (piece === '♔' || piece === '♚') {
+        castlingRights[side].kingSide = false;
+        castlingRights[side].queenSide = false;
+    }
+
+    if ((piece === '♖' || piece === '♜') && fromRow === backRank) {
+        if (fromCol === 0) {
+            castlingRights[side].queenSide = false;
+        }
+        if (fromCol === 7) {
+            castlingRights[side].kingSide = false;
+        }
+    }
+
+    if (capturedPiece && (capturedPiece === '♖' || capturedPiece === '♜')) {
+        const capturedSide = isWhitePiece(capturedPiece) ? 'white' : 'black';
+        const capturedBackRank = capturedSide === 'white' ? 7 : 0;
+
+        if (toRow === capturedBackRank) {
+            if (toCol === 0) {
+                castlingRights[capturedSide].queenSide = false;
+            }
+            if (toCol === 7) {
+                castlingRights[capturedSide].kingSide = false;
+            }
+        }
+    }
+}
 
 function createBoard() {
     board.innerHTML = '';
@@ -67,6 +142,7 @@ function createBoard() {
     moveHistory = [];
     redoHistory = [];
     capturedPieces = { white: [], black: [] };
+    castlingRights = getInitialCastlingRights();
     isWhiteTurn = true;
     selectedPiece = null;
     selectedSquare = null;
@@ -177,6 +253,53 @@ function isMoveLegal(piece, startRow, startCol, targetRow, targetCol) {
     const targetSquare = getSquare(targetRow, targetCol);
     const originalTargetPiece = targetSquare.textContent;
 
+    if (isCastlingMove(piece, startRow, startCol, targetRow, targetCol)) {
+        const side = isWhitePiece(piece) ? 'white' : 'black';
+        const direction = targetCol > startCol ? 'kingSide' : 'queenSide';
+
+        if (!castlingRights[side][direction]) {
+            return false;
+        }
+
+        const rookFromCol = direction === 'kingSide' ? 7 : 0;
+        const rookToCol = direction === 'kingSide' ? 5 : 3;
+        const rookSquare = getSquare(startRow, rookFromCol);
+        const rookTargetSquare = getSquare(startRow, rookToCol);
+        const rookPiece = rookSquare.textContent;
+        const enemyColor = side === 'white' ? 'black' : 'white';
+
+        if (rookPiece !== (side === 'white' ? '♖' : '♜')) {
+            return false;
+        }
+
+        const pathSquares = direction === 'kingSide' ? [5, 6] : [3, 2, 1];
+        if (pathSquares.some(col => getSquare(startRow, col).textContent)) {
+            return false;
+        }
+
+        if (isKingInCheck(side)) {
+            return false;
+        }
+
+        if (pathSquares.some(col => isSquareUnderAttack(startRow, col, enemyColor))) {
+            return false;
+        }
+
+        startSquare.textContent = '';
+        targetSquare.textContent = piece;
+        rookSquare.textContent = '';
+        rookTargetSquare.textContent = rookPiece;
+
+        const result = !isKingInCheck(side);
+
+        startSquare.textContent = piece;
+        targetSquare.textContent = originalTargetPiece;
+        rookSquare.textContent = rookPiece;
+        rookTargetSquare.textContent = '';
+
+        return result;
+    }
+
     startSquare.textContent = '';
     targetSquare.textContent = piece;
 
@@ -217,21 +340,39 @@ function movePiece(row, col) {
         return false;
     }
 
+    const castleMove = isCastlingMove(selectedPiece, selectedSquare.row, selectedSquare.col, row, col);
     const capturedValue = targetSquare.textContent;
-    moveHistory.push({
-        from: selectedSquare.id,
-        to: targetSquare.id,
-        piece: selectedPiece,
-        captured: capturedValue,
-        notation: `${pieceNames[selectedPiece]} ${formatSquare(selectedSquare.row, selectedSquare.col)} to ${formatSquare(row, col)}`
-    });
-
-    redoHistory = [];
+    const rookFromCol = col > selectedSquare.col ? 7 : 0;
+    const rookToCol = col > selectedSquare.col ? 5 : 3;
+    const rookFromSquare = castleMove ? getSquare(selectedSquare.row, rookFromCol) : null;
+    const rookToSquare = castleMove ? getSquare(selectedSquare.row, rookToCol) : null;
+    const rookPiece = castleMove ? rookFromSquare.textContent : null;
 
     if (capturedValue) {
         const captureOwner = isWhitePiece(selectedPiece) ? 'black' : 'white';
         capturedPieces[captureOwner].push(capturedValue);
     }
+
+    if (castleMove) {
+        rookFromSquare.textContent = '';
+        rookToSquare.textContent = rookPiece;
+    }
+
+    updateCastlingRights(selectedPiece, selectedSquare.row, selectedSquare.col, row, col, capturedValue);
+
+    moveHistory.push({
+        from: selectedSquare.id,
+        to: targetSquare.id,
+        piece: selectedPiece,
+        captured: capturedValue,
+        notation: castleMove ? (col > selectedSquare.col ? 'O-O' : 'O-O-O') : `${pieceNames[selectedPiece]} ${formatSquare(selectedSquare.row, selectedSquare.col)} to ${formatSquare(row, col)}`,
+        castle: castleMove,
+        rookFrom: castleMove ? `square-${selectedSquare.row}-${rookFromCol}` : null,
+        rookTo: castleMove ? `square-${selectedSquare.row}-${rookToCol}` : null,
+        rookPiece: rookPiece
+    });
+
+    redoHistory = [];
 
     targetSquare.textContent = selectedPiece;
     selectedSquare.textContent = '';
@@ -383,6 +524,13 @@ function undoMove() {
     fromSquare.textContent = lastMove.piece;
     toSquare.textContent = lastMove.captured;
 
+    if (lastMove.castle) {
+        const rookFromSquare = document.getElementById(lastMove.rookFrom);
+        const rookToSquare = document.getElementById(lastMove.rookTo);
+        rookFromSquare.textContent = lastMove.rookPiece;
+        rookToSquare.textContent = '';
+    }
+
     if (lastMove.captured) {
         const captureOwner = isWhitePiece(lastMove.piece) ? 'black' : 'white';
         capturedPieces[captureOwner].pop();
@@ -406,6 +554,13 @@ function redoMove() {
     const toSquare = document.getElementById(lastUndo.to);
     toSquare.textContent = lastUndo.piece;
     fromSquare.textContent = '';
+
+    if (lastUndo.castle) {
+        const rookFromSquare = document.getElementById(lastUndo.rookFrom);
+        const rookToSquare = document.getElementById(lastUndo.rookTo);
+        rookFromSquare.textContent = '';
+        rookToSquare.textContent = lastUndo.rookPiece;
+    }
 
     if (lastUndo.captured) {
         const captureOwner = isWhitePiece(lastUndo.piece) ? 'black' : 'white';

@@ -139,6 +139,29 @@ function getPieceMoves(piece, row, col) {
                 moves.push({ row: targetRow, col: targetCol, isCapture: true });
             }
         });
+
+        const team = isWhite ? 'white' : 'black';
+        const backRank = isWhite ? 7 : 0;
+
+        if (row === backRank && col === 4) {
+            if (castlingRights[team].kingSide) {
+                const rookSquare = getSquare(row, 7);
+                const rookPiece = rookSquare.textContent;
+                const pathClear = !getSquare(row, 5).textContent && !getSquare(row, 6).textContent;
+                if (rookPiece === (isWhite ? '♖' : '♜') && pathClear) {
+                    moves.push({ row, col: 6, isCapture: false, isCastle: true, castleSide: 'kingSide' });
+                }
+            }
+
+            if (castlingRights[team].queenSide) {
+                const rookSquare = getSquare(row, 0);
+                const rookPiece = rookSquare.textContent;
+                const pathClear = !getSquare(row, 1).textContent && !getSquare(row, 2).textContent && !getSquare(row, 3).textContent;
+                if (rookPiece === (isWhite ? '♖' : '♜') && pathClear) {
+                    moves.push({ row, col: 2, isCapture: false, isCastle: true, castleSide: 'queenSide' });
+                }
+            }
+        }
     }
 
     return moves;
