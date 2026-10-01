@@ -1,4 +1,5 @@
 # Chess Game
+https://nyekobaloyi81.github.io/chess/
 
 A lightweight browser-based chess game built with HTML, CSS, and JavaScript. It includes a playable board, turn tracking, check detection, captured pieces, move log, undo/redo support, and a dark mode toggle.
 
